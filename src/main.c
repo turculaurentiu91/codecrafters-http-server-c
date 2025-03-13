@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,8 +55,20 @@ int main() {
   printf("Waiting for a client to connect...\n");
   client_addr_len = sizeof(client_addr);
 
-  accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
+  int client_fd =
+      accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
+  if (client_fd == -1) {
+    printf("There was an error accepting client connection");
+    return 1;
+  }
   printf("Client connected\n");
+
+  char msg[19] = "HTTP/1.1 200 OK\r\n\r\n";
+  size_t written = write(client_fd, &msg, 20);
+  if (written == -1) {
+    printf("Could not write to the client socket");
+    return 1;
+  }
 
   close(server_fd);
 
