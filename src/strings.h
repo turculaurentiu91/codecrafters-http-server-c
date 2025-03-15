@@ -32,7 +32,7 @@ string_t string_new(size_t capacity);
 string_t string_new_from_cstr(char *c_str, size_t length);
 
 string_slice_t string_slice(string_t *string, size_t start, size_t length);
-string_slice_t string_slice_Slice(string_slice_t *string_slice, size_t start,
+string_slice_t string_slice_slice(string_slice_t *string_slice, size_t start,
                                   size_t length);
 
 void string_free(string_t *string);

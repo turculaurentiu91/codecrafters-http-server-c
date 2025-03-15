@@ -95,9 +95,24 @@ int main() {
     }
 
     string_slice_t path = request_values.head[1];
+    string_slice_t path_start;
+    if (path.length > 6) {
+      path_start = string_slice_slice(&path, 0, 6);
+    }
 
     if (string_slice_compare_cstr(&path, "/")) {
       written = write(client_fd, &msg_200, 19);
+    } else if (path.length > 6 &&
+               string_slice_compare_cstr(&path_start, "/echo/") > 0) {
+      string_slice_t echo_val = string_slice_slice(&path, 6, path.length - 6);
+      char res[1024 * 32];
+      size_t res_size =
+          snprintf(res, sizeof(res),
+                   "HTTP/1.1 200 OK\r\nContent-Type: "
+                   "text/plain\r\nContent-Length: %ld\r\n\r\n%.*s",
+                   echo_val.length, (int)echo_val.length, echo_val.head);
+
+      written = write(client_fd, res, res_size);
     } else {
       written = write(client_fd, &msg_404, 31);
     }
