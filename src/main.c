@@ -10,6 +10,84 @@
 
 #include "strings.h"
 
+void process_request(unsigned int client_fd) {
+
+  char msg_200[19] = "HTTP/1.1 200 OK\r\n\r\n";
+  char msg_404[31] = "HTTP/1.1 404 Not Found\r\n\r\n";
+  char msg_400[33] = "HTTP/1.1 400 Bad Request\r\n\r\n";
+
+  string_t request_str = string_new(32 * 1024);
+  size_t read_data = read(client_fd, request_str.head, request_str.capacity);
+  if (read_data == -1) {
+    printf("Could not read from the client soket");
+    close(client_fd);
+    return;
+  }
+
+  request_str.length = read_data;
+  string_slice_list_t request_lines = string_split(&request_str, "\r\n");
+  string_slice_t request_line = request_lines.head[0];
+  string_slice_list_t request_values = string_slice_split(&request_line, " ");
+
+  size_t written = 0;
+  if (request_values.length < 2) {
+    written = write(client_fd, &msg_400, 33);
+    if (written == -1) {
+      printf("Could not write to the client socket");
+      close(client_fd);
+      return;
+    }
+  }
+
+  string_slice_t path = request_values.head[1];
+
+  if (string_slice_compare_cstr(&path, "/")) {
+    written = write(client_fd, &msg_200, 19);
+  } else if (string_slice_compare_cstr(&path, "/user-agent")) {
+    for (size_t i = 1; i < request_lines.length - 1; i++) {
+      string_slice_t line = request_lines.head[i];
+      if (string_slice_starts_with(&line, "User-Agent: ")) {
+        string_slice_t user_agent_val =
+            string_slice_slice(&line, 12, line.length - 12);
+
+        char res[1024 * 32];
+        size_t res_size =
+            snprintf(res, sizeof(res),
+                     "HTTP/1.1 200 OK\r\nContent-Type: "
+                     "text/plain\r\nContent-Length: %ld\r\n\r\n%.*s",
+                     user_agent_val.length, (int)user_agent_val.length,
+                     user_agent_val.head);
+
+        written = write(client_fd, res, res_size);
+      }
+    }
+
+    if (written == 0) {
+      written = write(client_fd, &msg_400, 33);
+    }
+  } else if (path.length > 6 && string_slice_starts_with(&path, "/echo/")) {
+    string_slice_t echo_val = string_slice_slice(&path, 6, path.length - 6);
+    char res[1024 * 32];
+    size_t res_size =
+        snprintf(res, sizeof(res),
+                 "HTTP/1.1 200 OK\r\nContent-Type: "
+                 "text/plain\r\nContent-Length: %ld\r\n\r\n%.*s",
+                 echo_val.length, (int)echo_val.length, echo_val.head);
+
+    written = write(client_fd, res, res_size);
+  } else {
+    written = write(client_fd, &msg_404, 31);
+  }
+
+  if (written == -1) {
+    printf("Could not write to the client socket");
+    close(client_fd);
+    return;
+  }
+
+  close(client_fd);
+}
+
 int main() {
   // Disable output buffering
   setbuf(stdout, NULL);
@@ -67,80 +145,21 @@ int main() {
     }
     printf("Client connected\n");
 
-    char msg_200[19] = "HTTP/1.1 200 OK\r\n\r\n";
-    char msg_404[31] = "HTTP/1.1 404 Not Found\r\n\r\n";
-    char msg_400[33] = "HTTP/1.1 400 Bad Request\r\n\r\n";
-
-    string_t request_str = string_new(32 * 1024);
-    size_t read_data = read(client_fd, request_str.head, request_str.capacity);
-    if (read_data == -1) {
-      printf("Could not read from the client soket");
+    switch (fork()) {
+    case -1:
+      printf("Couldn ot spawn child pricess");
       close(client_fd);
-      continue;
-    }
+      break;
 
-    request_str.length = read_data;
-    string_slice_list_t request_lines = string_split(&request_str, "\r\n");
-    string_slice_t request_line = request_lines.head[0];
-    string_slice_list_t request_values = string_slice_split(&request_line, " ");
+    case 0:
+      close(server_fd);
+      process_request(client_fd);
+      _exit(EXIT_SUCCESS);
 
-    size_t written = 0;
-    if (request_values.length < 2) {
-      written = write(client_fd, &msg_400, 33);
-      if (written == -1) {
-        printf("Could not write to the client socket");
-        close(client_fd);
-        continue;
-      }
-    }
-
-    string_slice_t path = request_values.head[1];
-
-    if (string_slice_compare_cstr(&path, "/")) {
-      written = write(client_fd, &msg_200, 19);
-    } else if (string_slice_compare_cstr(&path, "/user-agent")) {
-      for (size_t i = 1; i < request_lines.length - 1; i++) {
-        string_slice_t line = request_lines.head[i];
-        if (string_slice_starts_with(&line, "User-Agent: ")) {
-          string_slice_t user_agent_val =
-              string_slice_slice(&line, 12, line.length - 12);
-
-          char res[1024 * 32];
-          size_t res_size =
-              snprintf(res, sizeof(res),
-                       "HTTP/1.1 200 OK\r\nContent-Type: "
-                       "text/plain\r\nContent-Length: %ld\r\n\r\n%.*s",
-                       user_agent_val.length, (int)user_agent_val.length,
-                       user_agent_val.head);
-
-          written = write(client_fd, res, res_size);
-        }
-      }
-
-      if (written == 0) {
-        written = write(client_fd, &msg_400, 33);
-      }
-    } else if (path.length > 6 && string_slice_starts_with(&path, "/echo/")) {
-      string_slice_t echo_val = string_slice_slice(&path, 6, path.length - 6);
-      char res[1024 * 32];
-      size_t res_size =
-          snprintf(res, sizeof(res),
-                   "HTTP/1.1 200 OK\r\nContent-Type: "
-                   "text/plain\r\nContent-Length: %ld\r\n\r\n%.*s",
-                   echo_val.length, (int)echo_val.length, echo_val.head);
-
-      written = write(client_fd, res, res_size);
-    } else {
-      written = write(client_fd, &msg_404, 31);
-    }
-
-    if (written == -1) {
-      printf("Could not write to the client socket");
+    default:
       close(client_fd);
-      continue;
+      break;
     }
-
-    close(client_fd);
   }
 
   close(server_fd);
