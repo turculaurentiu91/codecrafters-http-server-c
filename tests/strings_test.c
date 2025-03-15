@@ -165,6 +165,17 @@ void test_string_split() {
   assert(string_slice_compare_cstr(&list.head[4], "split") > 0);
 }
 
+void test_string_slice_starts_with() {
+  string_t string = string_new_from_cstr("test: some: string: to: split", 30);
+  string_slice_t slice = string_slice(&string, 0, string.length);
+
+  unsigned short int eq = string_slice_starts_with(&slice, "test");
+  unsigned short int not_eq = string_slice_starts_with(&slice, "not");
+
+  assert(eq > 0);
+  assert(not_eq == 0);
+}
+
 int main() {
   test_new_from_cstr();
   test_string_free();
@@ -178,4 +189,5 @@ int main() {
   test_string_slice_compare_cstr();
   test_string_slice_list();
   test_string_split();
+  test_string_slice_starts_with();
 }

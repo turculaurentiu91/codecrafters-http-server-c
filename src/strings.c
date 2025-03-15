@@ -280,3 +280,22 @@ string_slice_list_t string_slice_split(string_slice_t *string_slice,
 
   return list;
 }
+
+unsigned short int string_slice_starts_with(string_slice_t *slice,
+                                            const char *cmp) {
+  size_t cmp_len = strlen(cmp);
+
+  if (slice->length < cmp_len) {
+    return 0;
+  }
+
+  unsigned short int result = 1;
+  for (size_t i = 0; i < cmp_len; i++) {
+    if (slice->head[i] != cmp[i]) {
+      result = 0;
+      break;
+    }
+  }
+
+  return result;
+}

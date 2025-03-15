@@ -84,7 +84,7 @@ int main() {
     string_slice_t request_line = request_lines.head[0];
     string_slice_list_t request_values = string_slice_split(&request_line, " ");
 
-    size_t written;
+    size_t written = 0;
     if (request_values.length < 2) {
       written = write(client_fd, &msg_400, 33);
       if (written == -1) {
@@ -95,15 +95,32 @@ int main() {
     }
 
     string_slice_t path = request_values.head[1];
-    string_slice_t path_start;
-    if (path.length > 6) {
-      path_start = string_slice_slice(&path, 0, 6);
-    }
 
     if (string_slice_compare_cstr(&path, "/")) {
       written = write(client_fd, &msg_200, 19);
-    } else if (path.length > 6 &&
-               string_slice_compare_cstr(&path_start, "/echo/") > 0) {
+    } else if (string_slice_compare_cstr(&path, "/user-agent")) {
+      for (size_t i = 1; i < request_lines.length - 1; i++) {
+        string_slice_t line = request_lines.head[i];
+        if (string_slice_starts_with(&line, "User-Agent: ")) {
+          string_slice_t user_agent_val =
+              string_slice_slice(&line, 12, line.length - 12);
+
+          char res[1024 * 32];
+          size_t res_size =
+              snprintf(res, sizeof(res),
+                       "HTTP/1.1 200 OK\r\nContent-Type: "
+                       "text/plain\r\nContent-Length: %ld\r\n\r\n%.*s",
+                       user_agent_val.length, (int)user_agent_val.length,
+                       user_agent_val.head);
+
+          written = write(client_fd, res, res_size);
+        }
+      }
+
+      if (written == 0) {
+        written = write(client_fd, &msg_400, 33);
+      }
+    } else if (path.length > 6 && string_slice_starts_with(&path, "/echo/")) {
       string_slice_t echo_val = string_slice_slice(&path, 6, path.length - 6);
       char res[1024 * 32];
       size_t res_size =

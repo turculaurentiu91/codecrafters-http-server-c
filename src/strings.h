@@ -43,6 +43,9 @@ short unsigned int string_compare_cstr(string_t *a, const char *b);
 short unsigned int string_slice_compare(string_slice_t *a, string_slice_t *b);
 short unsigned int string_slice_compare_cstr(string_slice_t *a, const char *b);
 
+short unsigned int string_slice_starts_with(string_slice_t *slice,
+                                            const char *cmp);
+
 string_slice_list_t string_split(string_t *string, const char *split_on);
 string_slice_list_t string_slice_split(string_slice_t *string,
                                        const char *split_on);
