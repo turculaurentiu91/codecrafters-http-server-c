@@ -8,6 +8,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "strings.h"
+
 int main() {
   // Disable output buffering
   setbuf(stdout, NULL);
@@ -17,8 +19,9 @@ int main() {
   // when running tests.
   printf("Logs from your program will appear here!\n");
 
-  int server_fd, client_addr_len;
+  int server_fd;
   struct sockaddr_in client_addr;
+  unsigned int client_addr_len;
 
   server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd == -1) {
@@ -52,22 +55,60 @@ int main() {
     return 1;
   }
 
-  printf("Waiting for a client to connect...\n");
-  client_addr_len = sizeof(client_addr);
+  for (;;) {
+    printf("Waiting for a client to connect...\n");
+    client_addr_len = sizeof(client_addr);
 
-  int client_fd =
-      accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
-  if (client_fd == -1) {
-    printf("There was an error accepting client connection");
-    return 1;
-  }
-  printf("Client connected\n");
+    int client_fd =
+        accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
+    if (client_fd == -1) {
+      printf("There was an error accepting client connection");
+      return 1;
+    }
+    printf("Client connected\n");
 
-  char msg[19] = "HTTP/1.1 200 OK\r\n\r\n";
-  size_t written = write(client_fd, &msg, 20);
-  if (written == -1) {
-    printf("Could not write to the client socket");
-    return 1;
+    char msg_200[19] = "HTTP/1.1 200 OK\r\n\r\n";
+    char msg_404[31] = "HTTP/1.1 404 Not Found\r\n\r\n";
+    char msg_400[33] = "HTTP/1.1 400 Bad Request\r\n\r\n";
+
+    string_t request_str = string_new(32 * 1024);
+    size_t read_data = read(client_fd, request_str.head, request_str.capacity);
+    if (read_data == -1) {
+      printf("Could not read from the client soket");
+      close(client_fd);
+      continue;
+    }
+
+    request_str.length = read_data;
+    string_slice_list_t request_lines = string_split(&request_str, "\r\n");
+    string_slice_t request_line = request_lines.head[0];
+    string_slice_list_t request_values = string_slice_split(&request_line, " ");
+
+    size_t written;
+    if (request_values.length < 2) {
+      written = write(client_fd, &msg_400, 33);
+      if (written == -1) {
+        printf("Could not write to the client socket");
+        close(client_fd);
+        continue;
+      }
+    }
+
+    string_slice_t path = request_values.head[1];
+
+    if (string_slice_compare_cstr(&path, "/")) {
+      written = write(client_fd, &msg_200, 19);
+    } else {
+      written = write(client_fd, &msg_404, 31);
+    }
+
+    if (written == -1) {
+      printf("Could not write to the client socket");
+      close(client_fd);
+      continue;
+    }
+
+    close(client_fd);
   }
 
   close(server_fd);

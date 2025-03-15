@@ -7,3 +7,4 @@ file(GLOB_RECURSE SOURCE_FILES src/*.c src/*.h)
 set(CMAKE_C_STANDARD 23) # Enable the C23 standard
 
 add_executable(http-server ${SOURCE_FILES})
+add_executable(strings_test src/strings.h src/strings.c tests/strings_test.c)
