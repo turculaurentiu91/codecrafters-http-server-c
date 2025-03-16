@@ -76,8 +76,13 @@ void process_request(unsigned int client_fd, char *directory_str) {
       if (string_slice_starts_with(&header, "Accept-Encoding: ")) {
         string_slice_t value =
             string_slice_slice(&header, 17, header.length - 17);
-        if (string_slice_compare_cstr(&value, "gzip")) {
-          gzip_encoded = 1;
+
+        string_slice_list_t encoding_values = string_slice_split(&value, ", ");
+        for (size_t j = 0; j < encoding_values.length; j++) {
+          string_slice_t encoding_value = encoding_values.head[j];
+          if (string_slice_compare_cstr(&encoding_value, "gzip")) {
+            gzip_encoded = 1;
+          }
         }
       }
     }
