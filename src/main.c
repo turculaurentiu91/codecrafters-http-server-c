@@ -9,8 +9,31 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <zlib.h>
 
 #include "strings.h"
+
+// hope this would help
+int compress_to_gzip(const char *input, int inputSize, char *output,
+                     int outputSize) {
+  z_stream zs;
+  zs.zalloc = Z_NULL;
+  zs.zfree = Z_NULL;
+  zs.opaque = Z_NULL;
+  zs.avail_in = (uInt)inputSize;
+  zs.next_in = (Bytef *)input;
+  zs.avail_out = (uInt)outputSize;
+  zs.next_out = (Bytef *)output;
+
+  // hard to believe they don't have a macro for gzip encoding, "Add 16" is the
+  // best thing zlib can do: "Add 16 to windowBits to write a simple gzip header
+  // and trailer around the compressed data instead of a zlib wrapper"
+  deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 | 16, 8,
+               Z_DEFAULT_STRATEGY);
+  deflate(&zs, Z_FINISH);
+  deflateEnd(&zs);
+  return zs.total_out;
+}
 
 void process_request(unsigned int client_fd, char *directory_str) {
 
@@ -88,13 +111,23 @@ void process_request(unsigned int client_fd, char *directory_str) {
     }
     char *encoding = gzip_encoded ? "Content-Encoding: gzip\r\n" : "";
     char res[1024 * 32];
-    size_t res_size = snprintf(
-        res, sizeof(res),
-        "HTTP/1.1 200 OK\r\nContent-Type: "
-        "text/plain\r\nContent-Length: %ld\r\n%s\r\n%.*s",
-        echo_val.length, encoding, (int)echo_val.length, echo_val.head);
+    char body[1024 + 32];
+    size_t body_size;
+    if (gzip_encoded) {
+      body_size = compress_to_gzip(echo_val.head, (int)echo_val.length, body,
+                                   1024 * 32);
+    } else {
+      memcpy(body, echo_val.head, echo_val.length);
+      body_size = echo_val.length;
+    }
+
+    size_t res_size = snprintf(res, sizeof(res),
+                               "HTTP/1.1 200 OK\r\nContent-Type: "
+                               "text/plain\r\nContent-Length: %ld\r\n%s\r\n",
+                               body_size, encoding);
 
     written = write(client_fd, res, res_size);
+    written += write(client_fd, body, body_size);
   } else if (string_slice_compare_cstr(&request_values.head[0], "GET") &&
              path.length > 7 && string_slice_starts_with(&path, "/files/")) {
     string_slice_t file_name = string_slice_slice(&path, 7, path.length - 6);
