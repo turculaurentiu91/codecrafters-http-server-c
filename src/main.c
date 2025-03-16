@@ -15,6 +15,7 @@
 void process_request(unsigned int client_fd, char *directory_str) {
 
   char msg_200[19] = "HTTP/1.1 200 OK\r\n\r\n";
+  char msg_201[24] = "HTTP/1.1 201 Created\r\n\r\n";
   char msg_404[31] = "HTTP/1.1 404 Not Found\r\n\r\n";
   char msg_400[33] = "HTTP/1.1 400 Bad Request\r\n\r\n";
   char msg_500[34] = "HTTP/1.1 500 Server Error\r\n\r\n";
@@ -76,7 +77,8 @@ void process_request(unsigned int client_fd, char *directory_str) {
                  echo_val.length, (int)echo_val.length, echo_val.head);
 
     written = write(client_fd, res, res_size);
-  } else if (path.length > 7 && string_slice_starts_with(&path, "/files/")) {
+  } else if (string_slice_compare_cstr(&request_values.head[0], "GET") &&
+             path.length > 7 && string_slice_starts_with(&path, "/files/")) {
     string_slice_t file_name = string_slice_slice(&path, 7, path.length - 6);
     size_t path_length = strlen(directory_str) + file_name.length + 1;
     char path[path_length];
@@ -114,6 +116,33 @@ void process_request(unsigned int client_fd, char *directory_str) {
       written += write(client_fd, buffer.head, buffer.length);
     }
     close(file_fd);
+  } else if (string_slice_compare_cstr(&request_values.head[0], "POST") &&
+             path.length > 7 && string_slice_starts_with(&path, "/files/")) {
+
+    string_slice_t file_name = string_slice_slice(&path, 7, path.length - 6);
+    size_t path_length = strlen(directory_str) + file_name.length + 1;
+    char path[path_length];
+    snprintf(path, path_length, "%s%.*s", directory_str, (int)file_name.length,
+             file_name.head);
+
+    printf("file path is: %s\n", path);
+
+    int file_fd = open(path, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
+    if (file_fd == -1) {
+      if (errno == EEXIST) {
+        written = write(client_fd, &msg_400, 33);
+        goto final;
+      }
+
+      written = write(client_fd, &msg_500, 34);
+      goto final;
+    }
+
+    string_slice_t body_slice = request_lines.head[request_lines.length - 1];
+    write(file_fd, body_slice.head, body_slice.length);
+    close(file_fd);
+    written = write(client_fd, msg_201, 24);
+
   } else {
     written = write(client_fd, &msg_404, 31);
   }
@@ -137,15 +166,20 @@ int main(int argc, char **argv) {
   static struct option long_options[] = {
       /*   NAME       ARGUMENT           FLAG  SHORTNAME */
       {"directory", required_argument, NULL, 'd'},
+      {"single-thread", no_argument, NULL, 's'},
   };
 
   int option_index = 0;
+  unsigned short int multi_threaded = 1;
   char c;
-  while ((c = getopt_long(argc, argv, "d:", long_options, &option_index)) !=
+  while ((c = getopt_long(argc, argv, "d:s", long_options, &option_index)) !=
          -1) {
     switch (c) {
     case 'd':
       directory_str = optarg;
+      break;
+    case 's':
+      multi_threaded = 0;
       break;
     default:
       break;
@@ -209,20 +243,24 @@ int main(int argc, char **argv) {
     }
     printf("Client connected\n");
 
-    switch (fork()) {
-    case -1:
-      printf("Couldn ot spawn child pricess");
-      close(client_fd);
-      break;
+    if (multi_threaded) {
+      switch (fork()) {
+      case -1:
+        printf("Couldn ot spawn child pricess");
+        close(client_fd);
+        break;
 
-    case 0:
-      close(server_fd);
+      case 0:
+        close(server_fd);
+        process_request(client_fd, directory_str);
+        _exit(EXIT_SUCCESS);
+
+      default:
+        close(client_fd);
+        break;
+      }
+    } else {
       process_request(client_fd, directory_str);
-      _exit(EXIT_SUCCESS);
-
-    default:
-      close(client_fd);
-      break;
     }
   }
 
