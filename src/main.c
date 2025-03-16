@@ -69,12 +69,25 @@ void process_request(unsigned int client_fd, char *directory_str) {
     }
   } else if (path.length > 6 && string_slice_starts_with(&path, "/echo/")) {
     string_slice_t echo_val = string_slice_slice(&path, 6, path.length - 6);
+    unsigned short int gzip_encoded = 0;
+
+    for (size_t i = 1; i < request_lines.length - 2; i++) {
+      string_slice_t header = request_lines.head[i];
+      if (string_slice_starts_with(&header, "Accept-Encoding: ")) {
+        string_slice_t value =
+            string_slice_slice(&header, 17, header.length - 17);
+        if (string_slice_compare_cstr(&value, "gzip")) {
+          gzip_encoded = 1;
+        }
+      }
+    }
+    char *encoding = gzip_encoded ? "Content-Encoding: gzip\r\n" : "";
     char res[1024 * 32];
-    size_t res_size =
-        snprintf(res, sizeof(res),
-                 "HTTP/1.1 200 OK\r\nContent-Type: "
-                 "text/plain\r\nContent-Length: %ld\r\n\r\n%.*s",
-                 echo_val.length, (int)echo_val.length, echo_val.head);
+    size_t res_size = snprintf(
+        res, sizeof(res),
+        "HTTP/1.1 200 OK\r\nContent-Type: "
+        "text/plain\r\nContent-Length: %ld\r\n%s\r\n%.*s",
+        echo_val.length, encoding, (int)echo_val.length, echo_val.head);
 
     written = write(client_fd, res, res_size);
   } else if (string_slice_compare_cstr(&request_values.head[0], "GET") &&
