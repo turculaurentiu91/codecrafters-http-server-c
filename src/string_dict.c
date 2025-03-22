@@ -14,6 +14,17 @@ uint32_t simple_hash(string_slice_t *str) {
   return hash;
 }
 
+uint32_t simple_hash_cstr(const char *str) {
+  uint32_t hash = 5381; // Initial value, a common starting point
+  int c;
+
+  while ((c = *str++)) {
+    hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+  }
+
+  return hash;
+}
+
 dict_t string_dict_new(size_t initial_capacity) {
   dict_t dict = {
       .dict = malloc(sizeof(node_t) * initial_capacity),
@@ -97,6 +108,30 @@ string_slice_t *string_dict_get(dict_t *dict, string_slice_t *key) {
   while (last_node->next_collision != NULL) {
     last_node = last_node->next_collision;
     if (string_slice_compare(last_node->key, key) > 0) {
+      return last_node->value;
+    }
+  }
+
+  return NULL;
+}
+
+string_slice_t *string_dict_get_cstr(dict_t *dict, const char *key) {
+  uint32_t hash = simple_hash_cstr(key);
+  size_t dict_idx = hash % dict->dict_capacity;
+
+  node_t *dict_node = dict->dict + dict_idx;
+  if (dict_node->key == NULL) {
+    return NULL;
+  }
+
+  if (string_slice_compare_cstr(dict_node->key, key) > 0) {
+    return dict_node->value;
+  }
+
+  node_t *last_node = dict_node;
+  while (last_node->next_collision != NULL) {
+    last_node = last_node->next_collision;
+    if (string_slice_compare_cstr(last_node->key, key) > 0) {
       return last_node->value;
     }
   }

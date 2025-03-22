@@ -15,3 +15,4 @@ target_include_directories(http-server PRIVATE ${ZLIB_INCLUDE_DIRS})
 # Tests
 add_executable(strings_test src/strings.h src/strings.c tests/strings_test.c)
 add_executable(string_dict_test src/strings.h src/strings.c src/string_dict.h src/string_dict.c tests/string_dict_test.c)
+add_executable(request_test src/request.h src/request.c src/strings.h src/strings.c src/string_dict.h src/string_dict.c tests/request_test.c)

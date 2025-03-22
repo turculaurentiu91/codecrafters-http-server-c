@@ -23,6 +23,7 @@ typedef struct {
 dict_t string_dict_new(size_t initial_capacity);
 void string_dict_push(dict_t *dict, string_slice_t *key, string_slice_t *value);
 string_slice_t *string_dict_get(dict_t *dict, string_slice_t *key);
+string_slice_t *string_dict_get_cstr(dict_t *dict, const char *key);
 void string_dict_free(dict_t *dict);
 
 #endif
