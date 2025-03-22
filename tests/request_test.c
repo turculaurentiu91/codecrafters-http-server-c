@@ -30,7 +30,7 @@ void test_parse_request_missing_user_agent() {
   request_t request;
   unsigned short int result = request_parse_from_string(&req_str, &request);
 
-  assert(result == 0);
+  assert(result == 1);
 
   string_free(&req_str);
 }

@@ -67,10 +67,10 @@ unsigned short int request_parse_from_string(string_t *request_str,
   string_slice_t *user_agent =
       string_dict_get_cstr(&out->headers, "User-Agent");
   if (user_agent == NULL) {
-    goto error_and_cleanup;
+    out->user_agent = string_slice(request_str, 0, 0);
+  } else {
+    out->user_agent = *user_agent;
   }
-
-  out->user_agent = *user_agent;
 
   string_slice_t *accept_encodings =
       string_dict_get_cstr(&out->headers, "Accept-Encoding");
