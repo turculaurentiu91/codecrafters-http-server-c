@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <zlib.h>
 
-#include "strings.h"
+#include "request.h"
 
 // hope this would help
 int compress_to_gzip(const char *input, int inputSize, char *output,
@@ -51,12 +51,13 @@ void process_request(unsigned int client_fd, char *directory_str) {
   }
 
   request_str.length = read_data;
-  string_slice_list_t request_lines = string_split(&request_str, "\r\n");
-  string_slice_t request_line = request_lines.head[0];
-  string_slice_list_t request_values = string_slice_split(&request_line, " ");
+
+  request_t request;
+  unsigned short int parsing_result =
+      request_parse_from_string(&request_str, &request);
 
   size_t written = 0;
-  if (request_values.length < 2) {
+  if (parsing_result == 0) {
     written = write(client_fd, &msg_400, 33);
     if (written == -1) {
       printf("Could not write to the client socket");
@@ -64,49 +65,28 @@ void process_request(unsigned int client_fd, char *directory_str) {
     }
   }
 
-  string_slice_t path = request_values.head[1];
-
-  if (string_slice_compare_cstr(&path, "/")) {
+  if (string_slice_compare_cstr(&request.path, "/")) {
     written = write(client_fd, &msg_200, 19);
-  } else if (string_slice_compare_cstr(&path, "/user-agent")) {
-    for (size_t i = 1; i < request_lines.length - 1; i++) {
-      string_slice_t line = request_lines.head[i];
-      if (string_slice_starts_with(&line, "User-Agent: ")) {
-        string_slice_t user_agent_val =
-            string_slice_slice(&line, 12, line.length - 12);
+  } else if (string_slice_compare_cstr(&request.path, "/user-agent")) {
+    char res[1024 * 32];
+    size_t res_size =
+        snprintf(res, sizeof(res),
+                 "HTTP/1.1 200 OK\r\nContent-Type: "
+                 "text/plain\r\nContent-Length: %ld\r\n\r\n%.*s",
+                 request.user_agent.length, (int)request.user_agent.length,
+                 request.user_agent.head);
 
-        char res[1024 * 32];
-        size_t res_size =
-            snprintf(res, sizeof(res),
-                     "HTTP/1.1 200 OK\r\nContent-Type: "
-                     "text/plain\r\nContent-Length: %ld\r\n\r\n%.*s",
-                     user_agent_val.length, (int)user_agent_val.length,
-                     user_agent_val.head);
-
-        written = write(client_fd, res, res_size);
-      }
-    }
-
-    if (written == 0) {
-      written = write(client_fd, &msg_400, 33);
-    }
-  } else if (path.length > 6 && string_slice_starts_with(&path, "/echo/")) {
-    string_slice_t echo_val = string_slice_slice(&path, 6, path.length - 6);
+    written = write(client_fd, res, res_size);
+  } else if (request.path.length > 6 &&
+             string_slice_starts_with(&request.path, "/echo/")) {
+    string_slice_t echo_val =
+        string_slice_slice(&request.path, 6, request.path.length - 6);
     unsigned short int gzip_encoded = 0;
 
-    for (size_t i = 1; i < request_lines.length - 2; i++) {
-      string_slice_t header = request_lines.head[i];
-      if (string_slice_starts_with(&header, "Accept-Encoding: ")) {
-        string_slice_t value =
-            string_slice_slice(&header, 17, header.length - 17);
-
-        string_slice_list_t encoding_values = string_slice_split(&value, ", ");
-        for (size_t j = 0; j < encoding_values.length; j++) {
-          string_slice_t encoding_value = encoding_values.head[j];
-          if (string_slice_compare_cstr(&encoding_value, "gzip")) {
-            gzip_encoded = 1;
-          }
-        }
+    for (size_t j = 0; j < request.accepted_encodings.length; j++) {
+      string_slice_t encoding_value = request.accepted_encodings.head[j];
+      if (string_slice_compare_cstr(&encoding_value, "gzip")) {
+        gzip_encoded = 1;
       }
     }
     char *encoding = gzip_encoded ? "Content-Encoding: gzip\r\n" : "";
@@ -128,9 +108,10 @@ void process_request(unsigned int client_fd, char *directory_str) {
 
     written = write(client_fd, res, res_size);
     written += write(client_fd, body, body_size);
-  } else if (string_slice_compare_cstr(&request_values.head[0], "GET") &&
-             path.length > 7 && string_slice_starts_with(&path, "/files/")) {
-    string_slice_t file_name = string_slice_slice(&path, 7, path.length - 6);
+  } else if (request.verb == R_GET && request.path.length > 7 &&
+             string_slice_starts_with(&request.path, "/files/")) {
+    string_slice_t file_name =
+        string_slice_slice(&request.path, 7, request.path.length - 6);
     size_t path_length = strlen(directory_str) + file_name.length + 1;
     char path[path_length];
     snprintf(path, path_length, "%s%.*s", directory_str, (int)file_name.length,
@@ -167,10 +148,11 @@ void process_request(unsigned int client_fd, char *directory_str) {
       written += write(client_fd, buffer.head, buffer.length);
     }
     close(file_fd);
-  } else if (string_slice_compare_cstr(&request_values.head[0], "POST") &&
-             path.length > 7 && string_slice_starts_with(&path, "/files/")) {
+  } else if (request.verb == R_POST && request.path.length > 7 &&
+             string_slice_starts_with(&request.path, "/files/")) {
 
-    string_slice_t file_name = string_slice_slice(&path, 7, path.length - 6);
+    string_slice_t file_name =
+        string_slice_slice(&request.path, 7, request.path.length - 6);
     size_t path_length = strlen(directory_str) + file_name.length + 1;
     char path[path_length];
     snprintf(path, path_length, "%s%.*s", directory_str, (int)file_name.length,
@@ -189,11 +171,9 @@ void process_request(unsigned int client_fd, char *directory_str) {
       goto final;
     }
 
-    string_slice_t body_slice = request_lines.head[request_lines.length - 1];
-    write(file_fd, body_slice.head, body_slice.length);
+    write(file_fd, request.body.head, request.body.length);
     close(file_fd);
     written = write(client_fd, msg_201, 24);
-
   } else {
     written = write(client_fd, &msg_404, 31);
   }
